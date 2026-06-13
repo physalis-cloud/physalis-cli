@@ -1,4 +1,4 @@
-# @physalis/cli
+# physalis-cli
 
 CLI du gestionnaire de secrets **Physalis** (self-host). Son intérêt principal :
 
@@ -10,7 +10,7 @@ Zéro dépendance runtime (Node ≥ 18 : `fetch` natif, `child_process`).
 ## Installation
 
 ```bash
-npm install -g @physalis/cli   # ou: npx @physalis/cli ...
+npm install -g physalis-cli   # ou: npx physalis-cli ...
 ```
 
 ## Démarrage
