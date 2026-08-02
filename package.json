@@ -35,7 +35,7 @@
     "type": "git",
     "url": "git+https://github.com/physalis-cloud/physalis-cli.git"
   },
-  "homepage": "https://github.com/physalis-cloud/physalis-cli#readme",
+  "homepage": "https://physalis.cloud/en/self-host",
   "bugs": {
     "url": "https://github.com/physalis-cloud/physalis-cli/issues"
   }
