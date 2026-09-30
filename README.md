@@ -39,7 +39,7 @@ physalis run -- npm run dev
 | `physalis login --token <sv_…>` | Enregistre un token machine, lié à un projet et un environnement. |
 | `physalis logout` | Révoque la session sur l'instance et l'efface localement. |
 | `physalis whoami` | Affiche l'instance, le type d'accès et son expiration, le projet/env résolus. |
-| `physalis run -- <cmd…>` | **Héros.** Récupère `(project, env)`, injecte les secrets en env, exécute `<cmd>`. Propage signaux + code de sortie. Fail-closed. |
+| `physalis run [--mask] -- <cmd…>` | **Héros.** Récupère `(project, env)`, injecte les secrets en env, exécute `<cmd>`. Propage signaux + code de sortie. Fail-closed. |
 | `physalis secrets [--reveal]` | Liste les **clés** (valeurs masquées sauf `--reveal`). |
 | `physalis secrets get <KEY>` | Une valeur brute (scripting). |
 | `physalis export [--format=env\|json]` | Sortie stdout. ⚠️ `physalis export > .env` recrée le fichier en clair que `run` évite. |
@@ -63,6 +63,20 @@ Le fichier est écrit en `0600` à la racine du projet (dossier du
 journal d'audit comme un export. Supprime le fichier dès que tu n'en as plus
 besoin.
 
+## Masquer les secrets dans la sortie : `--mask`
+
+`physalis run --mask -- <cmd>` remplace toute valeur injectée (6 caractères ou
+plus) par `<masqué par Physalis>` dans ce que la commande affiche, sur la
+sortie standard et la sortie d'erreur — y compris une valeur coupée entre deux
+écritures. **D'office dans le shell d'un agent IA**, qui lit la sortie de ses
+commandes ; sur demande pour toi (ou `PHYSALIS_MASK=1`).
+
+Limites : la sortie passe par des tubes, donc la commande perd le terminal
+interactif (couleurs, invites) et l'ordre entre sortie standard et sortie
+d'erreur n'est plus garanti ; une valeur **transformée** avant d'être affichée
+(base64, découpée, écrite dans un fichier) n'est pas reconnue. C'est un filet
+contre l'affichage accidentel, pas une barrière.
+
 ## Travailler avec un agent IA (Claude Code)
 
 L'agent a **sa propre session**, jamais la tienne :
@@ -82,10 +96,11 @@ Dans le shell de l'agent (`CLAUDECODE=1`, ou `PHYSALIS_AGENT=1` pour un autre
 agent), la CLI **n'utilise que la session IA** : `physalis run -- npm test`
 marche dans le périmètre coché, et rien d'autre.
 
-> ⚠️ `physalis run` injecte des valeurs dans le processus : un agent qui lance
-> `printenv` peut les afficher. Les règles de refus et la détection du shell
-> évitent l'accident ; ce qui borne réellement l'agent, c'est son périmètre
-> (dev uniquement, choisi par toi) et la durée de la session (12 h).
+> ⚠️ Chez l'agent, `physalis run` masque d'office la sortie : un `printenv`
+> accidentel n'affiche que `<masqué par Physalis>`. Un agent qui transforme
+> une valeur avant de l'afficher la verrait quand même : ce qui le borne
+> réellement, c'est son périmètre (dev uniquement, choisi par toi) et la durée
+> de la session (12 h).
 
 ## Plusieurs projets, plusieurs instances
 

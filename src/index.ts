@@ -17,7 +17,7 @@ Usage :
   physalis login --token <sv_…> [--url <url>] [-p <project>] [-e <env>]
   physalis logout [--url <url>] [--ai]
   physalis whoami [--url <url>]
-  physalis run [-p <project>] [-e <env>] -- <commande...>
+  physalis run [--mask] [-p <project>] [-e <env>] -- <commande...>
   physalis secrets [--reveal] [-p <project>] [-e <env>]
   physalis secrets get <KEY> [-p <project>] [-e <env>]
   physalis export [--format=env|json] [-p <project>] [-e <env>]
@@ -30,6 +30,8 @@ Options communes :
       --url       URL de l'instance (sinon PHYSALIS_URL, .physalis.json, config)
       --token     token machine sv_… (sinon PHYSALIS_TOKEN, config)
       --no-browser  login : afficher l'URL sans ouvrir le navigateur
+      --mask      run : remplacer les valeurs des secrets dans la sortie
+                  (d'office dans le shell d'un agent IA)
       --output    pull : fichier à écrire (défaut : .env à la racine du projet)
       --ai        login/logout : session AGENT IA (ex. Claude Code), périmètre
                   choisi dans le navigateur, dev uniquement, lecture seule
@@ -58,6 +60,7 @@ const OPTIONS = {
   "no-browser": { type: "boolean" },
   output: { type: "string" },
   ai: { type: "boolean" },
+  mask: { type: "boolean" },
   help: { type: "boolean", short: "h" },
 } as const;
 
@@ -73,6 +76,7 @@ function parse(argv: string[]) {
     noBrowser?: boolean;
     output?: string;
     ai?: boolean;
+    mask?: boolean;
   } = {
     project: values.project,
     env: values.env,
@@ -83,6 +87,7 @@ function parse(argv: string[]) {
     noBrowser: values["no-browser"],
     output: values.output,
     ai: values.ai,
+    mask: values.mask,
   };
   return { flags, positionals, help: values.help === true };
 }
