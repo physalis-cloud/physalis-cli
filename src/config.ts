@@ -22,12 +22,16 @@ import {
   existsSync,
   rmSync,
 } from "node:fs";
+import { detectKeychain, keychainAccount, type Keychain } from "./keychain.js";
 
 export type AccessKind = "cli" | "machine";
 
 export type Instance = {
+  /** Vide quand `store === "keychain"` : le jeton est alors dans le trousseau. */
   token: string;
   kind: AccessKind;
+  /** Où vit le jeton d'un accès HUMAIN (phase 2f). Absent = dans ce fichier. */
+  store?: "keychain";
   /** Expiration d'une session CLI, en secondes epoch. Absent pour un `sv_`. */
   expiresAt?: number;
   email?: string;
@@ -150,17 +154,51 @@ export function writeStoredConfig(cfg: StoredConfig): void {
   writeFileSync(configPath(), JSON.stringify(cfg, null, 2) + "\n", { mode: 0o600 });
 }
 
-/** Enregistre (ou remplace) l'accès d'une instance et en fait l'instance par défaut. */
-export function saveInstance(url: string, instance: Instance, opts: { ai?: boolean } = {}): void {
+// Le trousseau est résolu une fois, et remplaçable pour les tests.
+let keychainOverride: Keychain | null | undefined;
+export function useKeychain(k: Keychain | null | undefined): void {
+  keychainOverride = k;
+}
+function keychain(): Keychain | null {
+  return keychainOverride !== undefined ? keychainOverride : detectKeychain();
+}
+
+/**
+ * Enregistre (ou remplace) l'accès d'une instance et en fait l'instance par
+ * défaut. Un accès HUMAIN va dans le trousseau du système quand il y en a un :
+ * le fichier n'en garde que la référence. Une session IA reste dans le fichier —
+ * l'agent, qui tourne sous le même utilisateur, doit pouvoir la lire.
+ * Rend l'endroit où le jeton a été rangé.
+ */
+export function saveInstance(
+  url: string,
+  instance: Instance,
+  opts: { ai?: boolean } = {},
+): "keychain" | "file" {
   const cfg = readStoredConfig();
   const key = normalizeUrl(url);
+  let where: "keychain" | "file" = "file";
+  let stored: Instance = { ...instance };
+  delete stored.store;
   if (opts.ai) {
-    cfg.aiInstances = { ...(cfg.aiInstances ?? {}), [key]: instance };
+    cfg.aiInstances = { ...(cfg.aiInstances ?? {}), [key]: stored };
   } else {
-    cfg.instances[key] = instance;
+    const kc = keychain();
+    if (kc && kc.set(keychainAccount(key), instance.token)) {
+      stored = { ...stored, token: "", store: "keychain" };
+      where = "keychain";
+    }
+    cfg.instances[key] = stored;
   }
   cfg.defaultUrl = key;
   writeStoredConfig(cfg);
+  return where;
+}
+
+/** Le jeton d'un accès stocké, où qu'il vive. null si le trousseau ne l'a plus. */
+export function instanceToken(url: string, instance: Instance): string | null {
+  if (instance.store !== "keychain") return instance.token || null;
+  return keychain()?.get(keychainAccount(normalizeUrl(url))) ?? null;
 }
 
 /** Retire l'accès d'une instance. Rend l'accès retiré, pour révocation côté serveur. */
@@ -168,8 +206,13 @@ export function removeInstance(url: string, opts: { ai?: boolean } = {}): Instan
   const cfg = readStoredConfig();
   const key = normalizeUrl(url);
   const bucket = opts.ai ? (cfg.aiInstances ?? {}) : cfg.instances;
-  const removed = bucket[key];
+  let removed = bucket[key];
   delete bucket[key];
+  if (removed?.store === "keychain") {
+    // Relire le jeton AVANT de l'effacer : `logout` en a besoin pour révoquer.
+    removed = { ...removed, token: instanceToken(key, removed) ?? "" };
+    keychain()?.delete(keychainAccount(key));
+  }
   const known = new Set([...Object.keys(cfg.instances), ...Object.keys(cfg.aiInstances ?? {})]);
   if (cfg.defaultUrl && !known.has(cfg.defaultUrl)) {
     cfg.defaultUrl = [...known][0];
@@ -237,7 +280,16 @@ export function resolveContext(flags: Flags, now: number = Date.now()): Context 
   const instance = url ? (agent ? stored.aiInstances?.[url] : stored.instances[url]) : undefined;
 
   const explicitToken = flags.token ?? env.PHYSALIS_TOKEN ?? projectFile.token;
-  const token = explicitToken ?? instance?.token;
+  let token = explicitToken;
+  if (!token && instance && url) {
+    const fromStore = instanceToken(url, instance);
+    if (!fromStore && instance.store === "keychain") {
+      throw new Error(
+        `Session introuvable dans le trousseau du système pour ${url}. Relance \`physalis login\`.`,
+      );
+    }
+    token = fromStore ?? undefined;
+  }
 
   if (agent && !token && url) {
     throw new Error(

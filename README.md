@@ -129,8 +129,18 @@ Priorité, du plus fort au plus faible :
 
 ## Sécurité
 
-- Les accès sont au repos en `0600` (protégés par le système de fichiers
-  uniquement). Un accès volé = lecture des secrets de sa portée.
+- **Ta session est rangée dans le trousseau du système** quand il y en a un :
+  `security` sur macOS, `secret-tool` (libsecret : GNOME Keyring, KWallet) sur
+  Linux. `~/.physalis/config.json` n'en garde alors qu'une référence — un agent
+  IA qui lirait ce fichier n'y trouve pas ton accès. Sans trousseau (serveur,
+  WSL, conteneur ; Windows pour l'instant), repli sur le fichier `0600`, et
+  `login` le dit. `PHYSALIS_NO_KEYCHAIN=1` force le fichier.
+  Limites : sous Linux, libsecret ne distingue pas deux processus du même
+  utilisateur ; sous macOS, `security` reçoit le jeton en argument le temps de
+  l'enregistrement. Le trousseau ferme la lecture d'un fichier, pas un
+  logiciel malveillant actif.
+- La **session IA** reste dans le fichier `0600` : l'agent doit pouvoir la lire.
+- Un accès volé = lecture des secrets de sa portée.
   - **Session CLI** : expire au bout de 12 h, révocable depuis l'interface
     (Compte → Sessions CLI) ou par `physalis logout`.
   - **Token machine `sv_…`** : **n'expire pas**. Il reste valide jusqu'à sa

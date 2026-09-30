@@ -13,7 +13,9 @@ import {
   resolveUrl,
   configPath,
   isAgentShell,
+  useKeychain,
 } from "./config.js";
+import type { Keychain } from "./keychain.js";
 
 const URL_A = "https://alpha.physalis.cloud";
 const URL_B = "https://beta.physalis.cloud";
@@ -21,6 +23,7 @@ const URL_B = "https://beta.physalis.cloud";
 let root: string;
 
 beforeEach(() => {
+  useKeychain(null); // par défaut : pas de trousseau, tout dans le fichier
   root = mkdtempSync(join(tmpdir(), "physalis-cli-"));
   process.env.PHYSALIS_CONFIG_DIR = join(root, "home", ".physalis");
   for (const k of ["PHYSALIS_URL", "PHYSALIS_TOKEN", "PHYSALIS_PROJECT", "PHYSALIS_ENV", "CLAUDECODE", "PHYSALIS_AGENT"]) {
@@ -174,4 +177,71 @@ test("les sessions IA survivent à la relecture et se retirent à part", () => {
   const cfg = readStoredConfig();
   assert.equal(cfg.instances[URL_A]?.token, "sv_cli_humain");
   assert.equal(cfg.aiInstances?.[URL_A], undefined);
+});
+
+/** Trousseau en mémoire ; `failing` simule un Secret Service qui refuse. */
+function memoryKeychain(failing = false): Keychain & { data: Map<string, string> } {
+  const data = new Map<string, string>();
+  return {
+    name: "mémoire",
+    data,
+    get: (a) => data.get(a) ?? null,
+    set: (a, v) => {
+      if (failing) return false;
+      data.set(a, v);
+      return true;
+    },
+    delete: (a) => {
+      data.delete(a);
+    },
+  };
+}
+
+test("trousseau : la session humaine n'est plus dans le fichier, seulement sa référence", () => {
+  const kc = memoryKeychain();
+  useKeychain(kc);
+  assert.equal(saveInstance(URL_A, { token: "sv_cli_humain", kind: "cli", expiresAt: 9e9 }), "keychain");
+  const raw = readFileSync(configPath(), "utf8");
+  assert.equal(raw.includes("sv_cli_humain"), false);
+  assert.equal(readStoredConfig().instances[URL_A]?.store, "keychain");
+  assert.equal(kc.data.get(`human:${URL_A}`), "sv_cli_humain");
+  assert.equal(resolveContext({ project: "p", env: "e" }).token, "sv_cli_humain");
+});
+
+test("trousseau : la session IA reste dans le fichier (l'agent doit la lire)", () => {
+  const kc = memoryKeychain();
+  useKeychain(kc);
+  assert.equal(saveInstance(URL_A, { token: "sv_cli_agent", kind: "cli" }, { ai: true }), "file");
+  assert.equal(kc.data.size, 0);
+  assert.equal(readStoredConfig().aiInstances?.[URL_A]?.token, "sv_cli_agent");
+});
+
+test("trousseau : un agent ne trouve la session humaine ni dans le fichier ni via la CLI", () => {
+  useKeychain(memoryKeychain());
+  saveInstance(URL_A, { token: "sv_cli_humain", kind: "cli", expiresAt: 9e9 });
+  process.env.CLAUDECODE = "1";
+  assert.throws(() => resolveContext({ project: "p", env: "e" }), /Aucune session agent IA/);
+  delete process.env.CLAUDECODE;
+});
+
+test("trousseau : logout relit le jeton (pour révoquer) puis l'efface", () => {
+  const kc = memoryKeychain();
+  useKeychain(kc);
+  saveInstance(URL_A, { token: "sv_cli_humain", kind: "cli" });
+  assert.equal(removeInstance(URL_A)?.token, "sv_cli_humain");
+  assert.equal(kc.data.size, 0);
+});
+
+test("trousseau vidé entre-temps : message clair, pas un 401 opaque", () => {
+  const kc = memoryKeychain();
+  useKeychain(kc);
+  saveInstance(URL_A, { token: "sv_cli_humain", kind: "cli", expiresAt: 9e9 });
+  kc.data.clear();
+  assert.throws(() => resolveContext({ project: "p", env: "e" }), /introuvable dans le trousseau.*physalis login/);
+});
+
+test("trousseau qui refuse l'écriture : repli sur le fichier, et c'est dit", () => {
+  useKeychain(memoryKeychain(true));
+  assert.equal(saveInstance(URL_A, { token: "sv_cli_humain", kind: "cli" }), "file");
+  assert.equal(readStoredConfig().instances[URL_A]?.token, "sv_cli_humain");
 });

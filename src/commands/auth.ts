@@ -28,6 +28,16 @@ function maskToken(t: string): string {
   return `${t.slice(0, 8)}…${t.slice(-4)}`;
 }
 
+/** Où le jeton a été rangé, dit à l'utilisateur. */
+function whereStored(where: "keychain" | "file", ai: boolean): string {
+  if (where === "keychain") return "  Jeton rangé dans le trousseau du système.\n";
+  if (ai) return `  Session IA dans ${configPath()} (0600), lisible par l'agent — c'est voulu.\n`;
+  return (
+    `  ⚠️ Pas de trousseau du système disponible (serveur, WSL, conteneur) : jeton dans ${configPath()} (0600).\n` +
+    "  Un agent IA lancé sous ton utilisateur pourrait le lire.\n"
+  );
+}
+
 function formatExpiry(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toLocaleString();
 }
@@ -98,9 +108,9 @@ export async function loginCommand(
     return 2;
   }
   if (flags.token) {
-    saveInstance(url, { token: flags.token, kind: kindOfToken(flags.token), ...keep });
+    const where = saveInstance(url, { token: flags.token, kind: kindOfToken(flags.token), ...keep });
     process.stderr.write(
-      `✓ Token ${maskToken(flags.token)} enregistré pour ${url}. Config : ${configPath()} (0600).\n`,
+      `✓ Token ${maskToken(flags.token)} enregistré pour ${url}.\n` + whereStored(where, false),
     );
     return 0;
   }
@@ -118,7 +128,7 @@ export async function loginCommand(
   process.stderr.write("En attente de l'approbation… (Ctrl-C pour annuler)\n");
 
   const grant = await pollDeviceFlow(url, start);
-  saveInstance(
+  const where = saveInstance(
     url,
     {
       token: grant.token,
@@ -132,7 +142,8 @@ export async function loginCommand(
   process.stderr.write(
     `✓ ${ai ? "Session agent IA ouverte sur" : "Connecté à"} ${url}` +
       `${grant.email ? ` ${ai ? "au nom de" : "en tant que"} ${grant.email}` : ""}, ` +
-      `jusqu'au ${formatExpiry(grant.expiresAt)}.\n`,
+      `jusqu'au ${formatExpiry(grant.expiresAt)}.\n` +
+      whereStored(where, ai),
   );
   return 0;
 }
@@ -187,8 +198,9 @@ export function whoamiCommand(flags: Flags): number {
             (instance.expiresAt
               ? `jusqu'au ${formatExpiry(instance.expiresAt)}`
               : "expiration inconnue (enregistrée par --token)")
-        : `accès    : token machine ${maskToken(instance.token)} (sans expiration)`,
+        : `accès    : token machine ${instance.store === "keychain" ? "" : `${maskToken(instance.token)} `}(sans expiration)`,
     );
+    lines.push(`stockage : ${instance.store === "keychain" ? "trousseau du système" : `${configPath()} (0600)`}`);
   }
   try {
     const ctx = resolveContext(flags);
