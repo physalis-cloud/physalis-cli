@@ -43,6 +43,8 @@ physalis run -- npm run dev
 | `physalis secrets [--reveal]` | Liste les **clés** (valeurs masquées sauf `--reveal`). |
 | `physalis secrets get <KEY>` | Une valeur brute (scripting). |
 | `physalis export [--format=env\|json]` | Sortie stdout. ⚠️ `physalis export > .env` recrée le fichier en clair que `run` évite. |
+| `physalis login --ai` | Ouvre une session **agent IA** (ex. Claude Code) : périmètre coché dans le navigateur, voir plus bas. |
+| `physalis ai-rules` | Affiche les règles de refus à coller dans `.claude/settings.json`. |
 | `physalis pull [--output <fichier>]` | Écrit le `.env` d'un environnement **de dev** pour travailler hors ligne (voir plus bas). |
 
 ## Travailler hors ligne : `physalis pull`
@@ -60,6 +62,30 @@ Le fichier est écrit en `0600` à la racine du projet (dossier du
 `.physalis.json`), ou là où `--output` l'indique. Chaque `pull` apparaît dans le
 journal d'audit comme un export. Supprime le fichier dès que tu n'en as plus
 besoin.
+
+## Travailler avec un agent IA (Claude Code)
+
+L'agent a **sa propre session**, jamais la tienne :
+
+```bash
+physalis ai-rules            # règles de refus → .claude/settings.json
+physalis login --ai          # depuis TON terminal
+```
+
+Dans le navigateur, la demande est marquée **Agent IA** : tu coches les couples
+projet/environnement qu'il peut lire — **environnements de développement
+uniquement**, jamais la production. L'instance applique ce périmètre à chaque
+lecture, en plus de tes propres droits ; l'agent ne peut jamais faire
+`physalis pull`. Chaque lecture est tracée comme venant de l'agent.
+
+Dans le shell de l'agent (`CLAUDECODE=1`, ou `PHYSALIS_AGENT=1` pour un autre
+agent), la CLI **n'utilise que la session IA** : `physalis run -- npm test`
+marche dans le périmètre coché, et rien d'autre.
+
+> ⚠️ `physalis run` injecte des valeurs dans le processus : un agent qui lance
+> `printenv` peut les afficher. Les règles de refus et la détection du shell
+> évitent l'accident ; ce qui borne réellement l'agent, c'est son périmètre
+> (dev uniquement, choisi par toi) et la durée de la session (12 h).
 
 ## Plusieurs projets, plusieurs instances
 

@@ -11,7 +11,7 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
-import { findProjectFile, resolveContext, type Flags } from "../config.js";
+import { findProjectFile, isAgentShell, resolveContext, type Flags } from "../config.js";
 import { fetchSecrets } from "../client.js";
 import { toEnvLine } from "./export.js";
 
@@ -55,6 +55,12 @@ export function gitIgnoreStatus(
 }
 
 export async function pullCommand(flags: Flags & { output?: string }): Promise<number> {
+  // Un agent IA ne télécharge jamais de .env en clair (scénario S4) ; l'instance
+  // le refuse aussi pour une session IA.
+  if (isAgentShell()) {
+    process.stderr.write("Refusé : `physalis pull` n'est pas disponible pour un agent IA. Utilise `physalis run`.\n");
+    return 2;
+  }
   const ctx = resolveContext(flags);
 
   if (!isPullableEnvironment(ctx.env)) {

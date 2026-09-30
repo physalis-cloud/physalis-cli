@@ -18,6 +18,7 @@ import {
   normalizeUrl,
   kindOfToken,
   configPath,
+  isAgentShell,
   type Flags,
 } from "../config.js";
 import { startDeviceFlow, pollDeviceFlow, revokeSession } from "../device.js";
@@ -72,8 +73,11 @@ async function askUrl(current?: string): Promise<string | undefined> {
 }
 
 export async function loginCommand(
-  flags: Flags & { noBrowser?: boolean },
+  flags: Flags & { noBrowser?: boolean; ai?: boolean },
 ): Promise<number> {
+  // Dans le shell d'un agent, `login` ne peut demander QU'UNE session IA : un
+  // humain qui approuve par habitude ne donne pas ses propres droits à l'agent.
+  const ai = flags.ai === true || isAgentShell();
   let url = resolveUrl(flags);
   if (!flags.url && !process.env.PHYSALIS_URL) url = await askUrl(url);
   if (!url) {
@@ -81,13 +85,18 @@ export async function loginCommand(
     return 2;
   }
   url = normalizeUrl(url);
-  const previous = readStoredConfig().instances[url];
+  const stored = readStoredConfig();
+  const previous = ai ? stored.aiInstances?.[url] : stored.instances[url];
   const keep = {
     ...(flags.project ?? previous?.project ? { project: flags.project ?? previous?.project } : {}),
     ...(flags.env ?? previous?.env ? { env: flags.env ?? previous?.env } : {}),
   };
 
   // Mode token machine : pas de navigateur, un `sv_` lié à un projet.
+  if (flags.token && ai) {
+    process.stderr.write("login --ai : pas de --token, la session IA s'approuve dans le navigateur.\n");
+    return 2;
+  }
   if (flags.token) {
     saveInstance(url, { token: flags.token, kind: kindOfToken(flags.token), ...keep });
     process.stderr.write(
@@ -96,36 +105,46 @@ export async function loginCommand(
     return 0;
   }
 
-  const start = await startDeviceFlow(url, hostname());
+  const start = await startDeviceFlow(url, hostname(), undefined, ai ? "AI" : "HUMAN");
   process.stderr.write(
-    `\nOuvre ${start.verificationUriComplete}\n` +
+    (ai
+      ? "\nSession AGENT IA : dans le navigateur, coche les projets et environnements\n" +
+        "que l'agent pourra lire (environnements de développement uniquement).\n"
+      : "") +
+      `\nOuvre ${start.verificationUriComplete}\n` +
       `et vérifie que le code affiché est :  ${start.userCode}\n\n`,
   );
   if (!flags.noBrowser) openBrowser(start.verificationUriComplete);
   process.stderr.write("En attente de l'approbation… (Ctrl-C pour annuler)\n");
 
   const grant = await pollDeviceFlow(url, start);
-  saveInstance(url, {
-    token: grant.token,
-    kind: "cli",
-    expiresAt: grant.expiresAt,
-    ...(grant.email ? { email: grant.email } : {}),
-    ...keep,
-  });
+  saveInstance(
+    url,
+    {
+      token: grant.token,
+      kind: "cli",
+      expiresAt: grant.expiresAt,
+      ...(grant.email ? { email: grant.email } : {}),
+      ...keep,
+    },
+    { ai },
+  );
   process.stderr.write(
-    `✓ Connecté à ${url}${grant.email ? ` en tant que ${grant.email}` : ""}, ` +
+    `✓ ${ai ? "Session agent IA ouverte sur" : "Connecté à"} ${url}` +
+      `${grant.email ? ` ${ai ? "au nom de" : "en tant que"} ${grant.email}` : ""}, ` +
       `jusqu'au ${formatExpiry(grant.expiresAt)}.\n`,
   );
   return 0;
 }
 
-export async function logoutCommand(flags: Flags): Promise<number> {
+export async function logoutCommand(flags: Flags & { ai?: boolean }): Promise<number> {
+  const ai = flags.ai === true || isAgentShell();
   const url = resolveUrl(flags);
   if (!url) {
     process.stderr.write("Aucune instance connectée.\n");
     return 0;
   }
-  const removed = removeInstance(url);
+  const removed = removeInstance(url, { ai });
   if (!removed) {
     process.stderr.write(`Aucun accès enregistré pour ${url}.\n`);
     return 0;
@@ -148,7 +167,9 @@ export async function logoutCommand(flags: Flags): Promise<number> {
 
 export function whoamiCommand(flags: Flags): number {
   const url = resolveUrl(flags);
-  const instance = url ? readStoredConfig().instances[url] : undefined;
+  const agent = isAgentShell();
+  const stored = readStoredConfig();
+  const instance = url ? (agent ? stored.aiInstances?.[url] : stored.instances[url]) : undefined;
   const fromEnv = Boolean(process.env.PHYSALIS_TOKEN);
   if (!url || (!instance && !fromEnv && !flags.token)) {
     process.stderr.write("Non connecté. Lance `physalis login`.\n");
@@ -162,7 +183,7 @@ export function whoamiCommand(flags: Flags): number {
   } else if (instance) {
     lines.push(
       instance.kind === "cli"
-        ? `accès    : session CLI${instance.email ? ` de ${instance.email}` : ""}, ` +
+        ? `accès    : ${agent ? "session AGENT IA" : "session CLI"}${instance.email ? ` de ${instance.email}` : ""}, ` +
             (instance.expiresAt
               ? `jusqu'au ${formatExpiry(instance.expiresAt)}`
               : "expiration inconnue (enregistrée par --token)")

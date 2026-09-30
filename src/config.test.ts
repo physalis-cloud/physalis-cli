@@ -12,6 +12,7 @@ import {
   resolveContext,
   resolveUrl,
   configPath,
+  isAgentShell,
 } from "./config.js";
 
 const URL_A = "https://alpha.physalis.cloud";
@@ -22,7 +23,7 @@ let root: string;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "physalis-cli-"));
   process.env.PHYSALIS_CONFIG_DIR = join(root, "home", ".physalis");
-  for (const k of ["PHYSALIS_URL", "PHYSALIS_TOKEN", "PHYSALIS_PROJECT", "PHYSALIS_ENV"]) {
+  for (const k of ["PHYSALIS_URL", "PHYSALIS_TOKEN", "PHYSALIS_PROJECT", "PHYSALIS_ENV", "CLAUDECODE", "PHYSALIS_AGENT"]) {
     delete process.env[k];
   }
   mkdirSync(join(root, "work"), { recursive: true });
@@ -143,4 +144,34 @@ test("le fichier de config ne contient que ce qu'on y a mis", () => {
     defaultUrl: URL_A,
     instances: { [URL_A]: { token: "sv_cli_a", kind: "cli", expiresAt: 42, email: "a@b.c" } },
   });
+});
+
+test("shell d'agent : CLAUDECODE=1 ou PHYSALIS_AGENT=1", () => {
+  assert.equal(isAgentShell({}), false);
+  assert.equal(isAgentShell({ CLAUDECODE: "1" }), true);
+  assert.equal(isAgentShell({ PHYSALIS_AGENT: "1" }), true);
+  assert.equal(isAgentShell({ CLAUDECODE: "0" }), false);
+});
+
+test("dans le shell d'un agent, la session humaine n'est JAMAIS utilisée", () => {
+  saveInstance(URL_A, { token: "sv_cli_humain", kind: "cli", expiresAt: 9e9 });
+  process.env.CLAUDECODE = "1";
+  assert.throws(
+    () => resolveContext({ project: "p", env: "development" }),
+    /Aucune session agent IA.*physalis login --ai/,
+  );
+  saveInstance(URL_A, { token: "sv_cli_agent", kind: "cli", expiresAt: 9e9 }, { ai: true });
+  assert.equal(resolveContext({ project: "p", env: "development" }).token, "sv_cli_agent");
+  delete process.env.CLAUDECODE;
+  assert.equal(resolveContext({ project: "p", env: "development" }).token, "sv_cli_humain");
+});
+
+test("les sessions IA survivent à la relecture et se retirent à part", () => {
+  saveInstance(URL_A, { token: "sv_cli_humain", kind: "cli" });
+  saveInstance(URL_A, { token: "sv_cli_agent", kind: "cli" }, { ai: true });
+  assert.equal(readStoredConfig().aiInstances?.[URL_A]?.token, "sv_cli_agent");
+  assert.equal(removeInstance(URL_A, { ai: true })?.token, "sv_cli_agent");
+  const cfg = readStoredConfig();
+  assert.equal(cfg.instances[URL_A]?.token, "sv_cli_humain");
+  assert.equal(cfg.aiInstances?.[URL_A], undefined);
 });

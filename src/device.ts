@@ -1,7 +1,7 @@
 // Flux d'appareil de `physalis login` (sur le modèle de RFC 8628).
 //
 // Contrat côté instance (chantier agent-ssh, phase 2) :
-//   POST /api/cli/device/start  { deviceName, kind: "HUMAN" }
+//   POST /api/cli/device/start  { deviceName, kind: "HUMAN" | "AI" }
 //     → 200 { deviceCode, userCode, verificationUri, verificationUriComplete,
 //             expiresIn, interval }
 //   POST /api/cli/device/poll   { deviceCode }
@@ -76,10 +76,11 @@ export async function startDeviceFlow(
   baseUrl: string,
   deviceName: string,
   deps: DeviceDeps = defaultDeps,
+  kind: "HUMAN" | "AI" = "HUMAN",
 ): Promise<DeviceStart> {
   const { status, data } = await postJson(deps, `${baseUrl}/api/cli/device/start`, {
     deviceName,
-    kind: "HUMAN",
+    kind,
   });
   if (status === 404) {
     throw new DeviceFlowError(

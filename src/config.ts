@@ -39,7 +39,19 @@ export type StoredConfig = {
   version: 2;
   defaultUrl?: string;
   instances: Record<string, Instance>;
+  /** Sessions « agent IA » (phase 2d), rangées À PART des sessions humaines. */
+  aiInstances?: Record<string, Instance>;
 };
+
+/**
+ * Shell d'un agent IA : Claude Code pose `CLAUDECODE=1` dans les commandes
+ * qu'il lance ; `PHYSALIS_AGENT=1` couvre les autres agents. La CLI n'y utilise
+ * QUE la session IA, jamais celle de l'humain. Contournable (`unset`) : c'est un
+ * garde-fou contre l'erreur, la barrière reste le périmètre côté instance.
+ */
+export function isAgentShell(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.CLAUDECODE === "1" || env.PHYSALIS_AGENT === "1";
+}
 
 /** Forme v1 (≤ 0.1.2) : un seul token, à plat. Lue puis convertie. */
 type LegacyConfig = {
@@ -101,7 +113,12 @@ export function upgradeConfig(raw: unknown): StoredConfig {
   if (!raw || typeof raw !== "object") return emptyConfig();
   const obj = raw as Partial<StoredConfig> & LegacyConfig;
   if (obj.version === 2 && obj.instances && typeof obj.instances === "object") {
-    return { version: 2, defaultUrl: obj.defaultUrl, instances: obj.instances };
+    return {
+      version: 2,
+      defaultUrl: obj.defaultUrl,
+      instances: obj.instances,
+      ...(obj.aiInstances && typeof obj.aiInstances === "object" ? { aiInstances: obj.aiInstances } : {}),
+    };
   }
   const cfg = emptyConfig();
   if (obj.url && obj.token) {
@@ -134,24 +151,30 @@ export function writeStoredConfig(cfg: StoredConfig): void {
 }
 
 /** Enregistre (ou remplace) l'accès d'une instance et en fait l'instance par défaut. */
-export function saveInstance(url: string, instance: Instance): void {
+export function saveInstance(url: string, instance: Instance, opts: { ai?: boolean } = {}): void {
   const cfg = readStoredConfig();
   const key = normalizeUrl(url);
-  cfg.instances[key] = instance;
+  if (opts.ai) {
+    cfg.aiInstances = { ...(cfg.aiInstances ?? {}), [key]: instance };
+  } else {
+    cfg.instances[key] = instance;
+  }
   cfg.defaultUrl = key;
   writeStoredConfig(cfg);
 }
 
 /** Retire l'accès d'une instance. Rend l'accès retiré, pour révocation côté serveur. */
-export function removeInstance(url: string): Instance | undefined {
+export function removeInstance(url: string, opts: { ai?: boolean } = {}): Instance | undefined {
   const cfg = readStoredConfig();
   const key = normalizeUrl(url);
-  const removed = cfg.instances[key];
-  delete cfg.instances[key];
-  if (cfg.defaultUrl === key) {
-    cfg.defaultUrl = Object.keys(cfg.instances)[0];
+  const bucket = opts.ai ? (cfg.aiInstances ?? {}) : cfg.instances;
+  const removed = bucket[key];
+  delete bucket[key];
+  const known = new Set([...Object.keys(cfg.instances), ...Object.keys(cfg.aiInstances ?? {})]);
+  if (cfg.defaultUrl && !known.has(cfg.defaultUrl)) {
+    cfg.defaultUrl = [...known][0];
   }
-  if (Object.keys(cfg.instances).length === 0) {
+  if (known.size === 0) {
     const file = configPath();
     if (existsSync(file)) rmSync(file);
   } else {
@@ -210,10 +233,18 @@ export function resolveContext(flags: Flags, now: number = Date.now()): Context 
 
   const rawUrl = flags.url ?? env.PHYSALIS_URL ?? projectFile.url ?? stored.defaultUrl;
   const url = rawUrl ? normalizeUrl(rawUrl) : undefined;
-  const instance = url ? stored.instances[url] : undefined;
+  const agent = isAgentShell(env);
+  const instance = url ? (agent ? stored.aiInstances?.[url] : stored.instances[url]) : undefined;
 
   const explicitToken = flags.token ?? env.PHYSALIS_TOKEN ?? projectFile.token;
   const token = explicitToken ?? instance?.token;
+
+  if (agent && !token && url) {
+    throw new Error(
+      `Aucune session agent IA pour ${url}. Depuis TON terminal (pas celui de l'agent) : ` +
+        "`physalis login --ai`, puis coche dans le navigateur ce que l'agent peut lire.",
+    );
+  }
 
   if (
     !explicitToken &&
