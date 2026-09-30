@@ -6,7 +6,7 @@ import { resolveContext, type Flags } from "../config.js";
 import { fetchSecrets } from "../client.js";
 
 // Échappe une valeur pour un fichier .env (guillemets doubles + \n, \", \\).
-function toEnvLine(key: string, value: string): string {
+export function toEnvLine(key: string, value: string): string {
   const needsQuote = /[\s"'#=\\]/.test(value) || value === "";
   if (!needsQuote) return `${key}=${value}`;
   const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");

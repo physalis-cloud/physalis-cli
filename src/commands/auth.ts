@@ -163,7 +163,9 @@ export function whoamiCommand(flags: Flags): number {
     lines.push(
       instance.kind === "cli"
         ? `accès    : session CLI${instance.email ? ` de ${instance.email}` : ""}, ` +
-            `jusqu'au ${instance.expiresAt ? formatExpiry(instance.expiresAt) : "?"}`
+            (instance.expiresAt
+              ? `jusqu'au ${formatExpiry(instance.expiresAt)}`
+              : "expiration inconnue (enregistrée par --token)")
         : `accès    : token machine ${maskToken(instance.token)} (sans expiration)`,
     );
   }

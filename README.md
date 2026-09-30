@@ -43,6 +43,23 @@ physalis run -- npm run dev
 | `physalis secrets [--reveal]` | Liste les **clés** (valeurs masquées sauf `--reveal`). |
 | `physalis secrets get <KEY>` | Une valeur brute (scripting). |
 | `physalis export [--format=env\|json]` | Sortie stdout. ⚠️ `physalis export > .env` recrée le fichier en clair que `run` évite. |
+| `physalis pull [--output <fichier>]` | Écrit le `.env` d'un environnement **de dev** pour travailler hors ligne (voir plus bas). |
+
+## Travailler hors ligne : `physalis pull`
+
+`physalis run` a besoin du réseau. Pour coder sans connexion, `physalis pull`
+écrit le `.env` du projet — **et c'est la seule commande qui écrit des secrets
+en clair sur le disque**, donc elle refuse :
+
+- tout environnement qui n'est pas de développement (`development`, `dev`,
+  `local`, `test`, `testing`, `sandbox`) — l'instance le refuse aussi ;
+- un fichier que git **n'ignore pas** (il finirait committé) : ajoute `.env` à
+  `.gitignore` d'abord.
+
+Le fichier est écrit en `0600` à la racine du projet (dossier du
+`.physalis.json`), ou là où `--output` l'indique. Chaque `pull` apparaît dans le
+journal d'audit comme un export. Supprime le fichier dès que tu n'en as plus
+besoin.
 
 ## Plusieurs projets, plusieurs instances
 

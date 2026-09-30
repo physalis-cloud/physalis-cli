@@ -20,8 +20,12 @@ export class PhysalisApiError extends Error {
  */
 export async function fetchSecrets(
   ctx: Context,
+  opts: { purpose?: "pull" } = {},
 ): Promise<Record<string, string>> {
-  const url = `${ctx.url}/api/secrets/${encodeURIComponent(ctx.project)}/${encodeURIComponent(ctx.env)}`;
+  // `purpose=pull` : les valeurs finiront dans un fichier. L'instance le trace
+  // comme un export et le refuse hors environnement de dev.
+  const query = opts.purpose ? `?purpose=${opts.purpose}` : "";
+  const url = `${ctx.url}/api/secrets/${encodeURIComponent(ctx.project)}/${encodeURIComponent(ctx.env)}${query}`;
 
   let res: Response;
   try {
@@ -42,8 +46,16 @@ export async function fetchSecrets(
     );
   }
   if (res.status === 403) {
+    const body = (await res.clone().json().catch(() => null)) as { reason?: string } | null;
+    if (body?.reason === "pull_non_dev_environment") {
+      throw new PhysalisApiError(
+        `Refusé : « ${ctx.env} » n'est pas un environnement de développement. ` +
+          "`physalis pull` n'écrit pas de .env en clair pour cet environnement ; utilise `physalis run`.",
+        403,
+      );
+    }
     throw new PhysalisApiError(
-      `Accès refusé (403) à ${ctx.project}/${ctx.env} — le token n'a pas la portée requise.`,
+      `Accès refusé (403) à ${ctx.project}/${ctx.env} — ton compte n'a pas accès à ce projet, ou le token machine n'a pas cette portée.`,
       403,
     );
   }

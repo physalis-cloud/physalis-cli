@@ -6,6 +6,7 @@ import type { Flags } from "./config.js";
 import { runCommand } from "./commands/run.js";
 import { secretsListCommand, secretsGetCommand } from "./commands/secrets.js";
 import { exportCommand } from "./commands/export.js";
+import { pullCommand } from "./commands/pull.js";
 import { loginCommand, logoutCommand, whoamiCommand } from "./commands/auth.js";
 
 const HELP = `physalis — gestionnaire de secrets self-host (CLI)
@@ -19,6 +20,7 @@ Usage :
   physalis secrets [--reveal] [-p <project>] [-e <env>]
   physalis secrets get <KEY> [-p <project>] [-e <env>]
   physalis export [--format=env|json] [-p <project>] [-e <env>]
+  physalis pull [--output <fichier>] [-p <project>] [-e <env>]
 
 Options communes :
   -p, --project   projet (sinon PHYSALIS_PROJECT, .physalis.json, config)
@@ -26,6 +28,7 @@ Options communes :
       --url       URL de l'instance (sinon PHYSALIS_URL, .physalis.json, config)
       --token     token machine sv_… (sinon PHYSALIS_TOKEN, config)
       --no-browser  login : afficher l'URL sans ouvrir le navigateur
+      --output    pull : fichier à écrire (défaut : .env à la racine du projet)
   -h, --help      cette aide
 
 « physalis login » ouvre une session de 12 h, approuvée dans le navigateur, qui
@@ -44,6 +47,7 @@ const OPTIONS = {
   reveal: { type: "boolean" },
   format: { type: "string" },
   "no-browser": { type: "boolean" },
+  output: { type: "string" },
   help: { type: "boolean", short: "h" },
 } as const;
 
@@ -53,7 +57,7 @@ function parse(argv: string[]) {
     options: OPTIONS,
     allowPositionals: true,
   });
-  const flags: Flags & { reveal?: boolean; format?: string; noBrowser?: boolean } = {
+  const flags: Flags & { reveal?: boolean; format?: string; noBrowser?: boolean; output?: string } = {
     project: values.project,
     env: values.env,
     url: values.url,
@@ -61,6 +65,7 @@ function parse(argv: string[]) {
     reveal: values.reveal,
     format: values.format,
     noBrowser: values["no-browser"],
+    output: values.output,
   };
   return { flags, positionals, help: values.help === true };
 }
@@ -108,6 +113,8 @@ async function main(): Promise<number> {
       return await secretsListCommand(flags);
     case "export":
       return await exportCommand(flags);
+    case "pull":
+      return await pullCommand(flags);
     default:
       process.stderr.write(`Commande inconnue : « ${command} ». Voir « physalis --help ».\n`);
       return 2;
