@@ -11,9 +11,10 @@ import { loginCommand, logoutCommand, whoamiCommand } from "./commands/auth.js";
 const HELP = `physalis — gestionnaire de secrets self-host (CLI)
 
 Usage :
-  physalis login [--url <url>] [--token <sv_…>] [-p <project>] [-e <env>]
-  physalis logout
-  physalis whoami
+  physalis login [--url <url>] [--no-browser] [-p <project>] [-e <env>]
+  physalis login --token <sv_…> [--url <url>] [-p <project>] [-e <env>]
+  physalis logout [--url <url>]
+  physalis whoami [--url <url>]
   physalis run [-p <project>] [-e <env>] -- <commande...>
   physalis secrets [--reveal] [-p <project>] [-e <env>]
   physalis secrets get <KEY> [-p <project>] [-e <env>]
@@ -22,9 +23,15 @@ Usage :
 Options communes :
   -p, --project   projet (sinon PHYSALIS_PROJECT, .physalis.json, config)
   -e, --env       environnement (sinon PHYSALIS_ENV, .physalis.json, config)
-      --url       URL de l'instance (sinon PHYSALIS_URL, config)
-      --token     token sv_… (sinon PHYSALIS_TOKEN, config)
+      --url       URL de l'instance (sinon PHYSALIS_URL, .physalis.json, config)
+      --token     token machine sv_… (sinon PHYSALIS_TOKEN, config)
+      --no-browser  login : afficher l'URL sans ouvrir le navigateur
   -h, --help      cette aide
+
+« physalis login » ouvre une session de 12 h, approuvée dans le navigateur, qui
+donne accès à tous tes projets de l'instance. Dans chaque projet, un
+.physalis.json (sans token, committable) indique url, project et env ; il est
+cherché en remontant les dossiers, comme .git.
 
 Le héros : « physalis run -- node app.js » injecte les secrets en variables
 d'env du process, sans jamais écrire de fichier sur le disque.`;
@@ -36,6 +43,7 @@ const OPTIONS = {
   token: { type: "string" },
   reveal: { type: "boolean" },
   format: { type: "string" },
+  "no-browser": { type: "boolean" },
   help: { type: "boolean", short: "h" },
 } as const;
 
@@ -45,13 +53,14 @@ function parse(argv: string[]) {
     options: OPTIONS,
     allowPositionals: true,
   });
-  const flags: Flags & { reveal?: boolean; format?: string } = {
+  const flags: Flags & { reveal?: boolean; format?: string; noBrowser?: boolean } = {
     project: values.project,
     env: values.env,
     url: values.url,
     token: values.token,
     reveal: values.reveal,
     format: values.format,
+    noBrowser: values["no-browser"],
   };
   return { flags, positionals, help: values.help === true };
 }
@@ -89,7 +98,7 @@ async function main(): Promise<number> {
     case "login":
       return await loginCommand(flags);
     case "logout":
-      return logoutCommand();
+      return await logoutCommand(flags);
     case "whoami":
       return whoamiCommand(flags);
     case "secrets":
