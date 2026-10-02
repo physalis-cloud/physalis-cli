@@ -1,6 +1,6 @@
 {
   "name": "physalis-cli",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "CLI Physalis — injecte tes secrets sans jamais les écrire sur le disque (physalis run), liste/exporte tes secrets en self-host.",
   "type": "module",
   "bin": {
