@@ -155,8 +155,11 @@ Priorité, du plus fort au plus faible :
 ```bash
 npm install
 npm run build      # → dist/
-npm run watch      # tsc --watch
-npm run test       # tests node:test (zéro dépendance)
+npm run dev        # tsc --watch
+npm run lint       # ESLint
+npm run typecheck  # tsc --noEmit (sources + e2e)
+npm run test       # tests unitaires node:test, à côté de leur module
+npm run e2e        # parcours de bout en bout (e2e/) : la CLI compilée contre une fausse instance
 ```
 
 ## Licence

@@ -1,0 +1,12 @@
+{
+  // Tests e2e : vérifiés par `npm run typecheck`, jamais compilés. Node les
+  // exécute tels quels (suppression des types, Node ≥ 22.18).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true
+  },
+  "include": ["e2e/**/*.ts"]
+}
